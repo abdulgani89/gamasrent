@@ -357,7 +357,7 @@ export const bookingService = {
     const { status, search, startDate, endDate, page = 1, limit = 20 } = filters
     const where: Prisma.BookingWhereInput = {}
 
-    if (status) where.status = status
+    if (status) where.status = status as BookingStatus
     if (search) {
       where.OR = [
         { referenceCode: { contains: search } },

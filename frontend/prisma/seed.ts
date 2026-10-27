@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
@@ -206,8 +206,8 @@ async function main() {
       update: {
         name: item.name,
         description: item.description,
-        specifications: JSON.stringify(item.specifications),
-        facilities: JSON.stringify(item.facilities),
+        specifications: item.specifications as any,
+        facilities: item.facilities,
         rentalTerms: item.rentalTerms,
         dailyRate: item.dailyRate,
         depositAmount: item.depositAmount,
@@ -220,8 +220,8 @@ async function main() {
         name: item.name,
         slug: item.slug,
         description: item.description,
-        specifications: JSON.stringify(item.specifications),
-        facilities: JSON.stringify(item.facilities),
+        specifications: item.specifications as any,
+        facilities: item.facilities,
         rentalTerms: item.rentalTerms,
         dailyRate: item.dailyRate,
         depositAmount: item.depositAmount,

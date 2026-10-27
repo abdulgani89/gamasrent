@@ -9,9 +9,9 @@ export function cn(...inputs: ClassValue[]) {
  * Format angka ke format Rupiah
  * @example formatRupiah(150000) => "Rp150.000"
  */
-export function formatRupiah(amount: number | string | null | undefined): string {
+export function formatRupiah(amount: number | string | { toString(): string } | null | undefined): string {
   if (amount === null || amount === undefined) return 'Rp0'
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount
+  const num = typeof amount === 'number' ? amount : parseFloat(amount.toString())
   if (isNaN(num)) return 'Rp0'
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',

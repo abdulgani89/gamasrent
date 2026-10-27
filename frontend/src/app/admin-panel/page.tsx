@@ -261,7 +261,7 @@ export default async function AdminDashboardPage() {
                       <div className="text-slate-400 font-medium">({b.duration} hari)</div>
                     </td>
                     <td className="py-4 px-6 font-semibold text-slate-900">
-                      {formatRupiah(b.totalPrice)}
+                      {formatRupiah(Number(b.totalPrice))}
                     </td>
                     <td className="py-4 px-6">{statusBadge(b.status)}</td>
                     <td className="py-4 px-6 text-right space-x-2">

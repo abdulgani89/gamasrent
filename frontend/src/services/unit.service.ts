@@ -14,8 +14,8 @@ export const unitService = {
         name: input.name,
         slug,
         description: input.description,
-        specifications: input.specifications ? JSON.stringify(input.specifications) : null,
-        facilities: JSON.stringify(input.facilities || []),
+        specifications: (input.specifications ?? Prisma.JsonNull) as any,
+        facilities: (input.facilities || []) as any,
         rentalTerms: input.rentalTerms,
         dailyRate: Number(input.dailyRate),
         depositAmount: Number(input.depositAmount ?? 0),
@@ -45,8 +45,8 @@ export const unitService = {
     if (input.slug !== undefined) data.slug = input.slug
     if (input.description !== undefined) data.description = input.description
     if (input.categoryId !== undefined) data.category = { connect: { id: input.categoryId } }
-    if (input.specifications !== undefined) data.specifications = JSON.stringify(input.specifications)
-    if (input.facilities !== undefined) data.facilities = JSON.stringify(input.facilities)
+    if (input.specifications !== undefined) data.specifications = (input.specifications ?? Prisma.JsonNull) as any
+    if (input.facilities !== undefined) data.facilities = input.facilities as any
     if (input.rentalTerms !== undefined) data.rentalTerms = input.rentalTerms
     if (input.dailyRate !== undefined) data.dailyRate = Number(input.dailyRate)
     if (input.depositAmount !== undefined) data.depositAmount = Number(input.depositAmount)
