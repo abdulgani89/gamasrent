@@ -1,0 +1,260 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum OperationalStatus {
+  AVAILABLE
+  MAINTENANCE
+  RETIRED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+enum PickupOption {
+  SELF_PICKUP
+  DELIVERY
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum UserRole {
+  ADMIN
+  SUPER_ADMIN
+}
+
+// ─── Category ────────────────────────────────────────────────────────────────
+
+model Category {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  slug        String       @unique
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  units       RentalUnit[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+// ─── RentalUnit ──────────────────────────────────────────────────────────────
+
+model RentalUnit {
+  id                String            @id @default(cuid())
+  categoryId        String
+  name              String
+  slug              String            @unique
+  description       String?
+  specifications    Json?             // flexible key-value pairs
+  facilities        String[]
+  rentalTerms       String?
+  dailyRate         Decimal           @db.Decimal(15, 2)
+  depositAmount     Decimal           @default(0) @db.Decimal(15, 2)
+  operationalStatus OperationalStatus @default(AVAILABLE)
+  isActive          Boolean           @default(true)
+  isFeatured        Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  category  Category     @relation(fields: [categoryId], references: [id])
+  images    UnitImage[]
+  bookings  Booking[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([isFeatured])
+  @@index([categoryId])
+  @@index([operationalStatus])
+}
+
+// ─── UnitImage ───────────────────────────────────────────────────────────────
+
+model UnitImage {
+  id        String     @id @default(cuid())
+  unitId    String
+  imageUrl  String
+  altText   String?
+  sortOrder Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  unit RentalUnit @relation(fields: [unitId], references: [id])
+
+  @@index([unitId])
+  @@index([sortOrder])
+}
+
+// ─── Customer ────────────────────────────────────────────────────────────────
+
+model Customer {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String    @unique
+  email     String?   @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  bookings  Booking[]
+
+  @@index([phone])
+  @@index([email])
+}
+
+// ─── Booking ─────────────────────────────────────────────────────────────────
+
+model Booking {
+  id                String        @id @default(cuid())
+  referenceCode     String        @unique
+  customerId        String
+  unitId            String
+  startAt           DateTime
+  endAt             DateTime
+  pickupOption      PickupOption  @default(SELF_PICKUP)
+  deliveryLocation  String?
+  dailyRateSnapshot Decimal       @db.Decimal(15, 2)  // snapshot at booking time
+  duration          Int           // in days
+  extraCost         Decimal       @default(0) @db.Decimal(15, 2)
+  totalPrice        Decimal       @db.Decimal(15, 2)
+  status            BookingStatus @default(PENDING)
+  holdExpiresAt     DateTime?
+  customerNotes     String?
+  adminNotes        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  customer       Customer        @relation(fields: [customerId], references: [id])
+  unit           RentalUnit      @relation(fields: [unitId], references: [id])
+  paymentRecords PaymentRecord[]
+  statusHistory  BookingStatusHistory[]
+
+  @@index([referenceCode])
+  @@index([customerId])
+  @@index([unitId])
+  @@index([status])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([holdExpiresAt])
+}
+
+// ─── BookingStatusHistory ─────────────────────────────────────────────────────
+
+model BookingStatusHistory {
+  id        String        @id @default(cuid())
+  bookingId String
+  fromStatus BookingStatus?
+  toStatus  BookingStatus
+  note      String?
+  changedBy String?       // admin user id
+  createdAt DateTime      @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  @@index([bookingId])
+}
+
+// ─── PaymentRecord ────────────────────────────────────────────────────────────
+
+model PaymentRecord {
+  id            String        @id @default(cuid())
+  bookingId     String
+  amount        Decimal       @db.Decimal(15, 2)
+  paymentMethod PaymentMethod @default(CASH)
+  paymentStatus PaymentStatus @default(PENDING)
+  paidAt        DateTime?
+  notes         String?
+  recordedById  String?       // admin user id
+  createdAt     DateTime      @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  @@index([bookingId])
+}
+
+// ─── User (Admin) ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(ADMIN)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[]
+
+  @@index([email])
+}
+
+// ─── Session ──────────────────────────────────────────────────────────────────
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionToken])
+  @@index([userId])
+}
+
+// ─── BusinessSetting ──────────────────────────────────────────────────────────
+
+model BusinessSetting {
+  id                  String   @id @default(cuid())
+  businessName        String   @default("Gamas Rent")
+  logoUrl             String?
+  whatsappNumber      String   @default("6281234567890")
+  address             String?
+  businessHours       String?  // JSON string
+  socialMedia         String?  // JSON string
+  privacyPolicy       String?
+  rentalTerms         String?
+  holdDurationMinutes Int      @default(30)
+  timezone            String   @default("Asia/Jakarta")
+  updatedAt           DateTime @updatedAt
+}
+
+// ─── AnalyticsEvent ───────────────────────────────────────────────────────────
+
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  eventType  String   // catalog_view, search, unit_view, availability_check, booking_created, whatsapp_click, booking_confirmed, rental_completed
+  unitId     String?
+  metadata   Json?
+  sessionId  String?
+  createdAt  DateTime @default(now())
+
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([unitId])
+}
