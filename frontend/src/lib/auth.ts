@@ -10,12 +10,15 @@ const loginSchema = z.object({
 })
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  trustHost: true,
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'gamas-rent-secret-key-32chars-min-secure',
   session: {
     strategy: 'jwt',
     maxAge: 24 * 60 * 60, // 24 hours
   },
   pages: {
     signIn: '/admin-panel/login',
+    error: '/admin-panel/login',
   },
   providers: [
     Credentials({
