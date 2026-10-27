@@ -51,6 +51,8 @@
     "zod": "^4.6.7"
   },
   "optionalDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
+    "@tailwindcss/oxide-linux-x64-musl": "4.3.3",
     "lightningcss": "1.32.0",
     "lightningcss-linux-x64-gnu": "1.32.0",
     "lightningcss-linux-arm64-gnu": "1.32.0",
