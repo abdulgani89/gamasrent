@@ -8,7 +8,7 @@ export const metadata = {
 }
 
 export default async function KontakPage() {
-  const setting = await prisma.businessSetting.findFirst()
+  const setting = await prisma.businessSetting.findFirst().catch(() => null)
   const waNumber = setting?.whatsappNumber || '6288223004545'
   const address = setting?.address || 'Gang Pete Selatan 1, Sekaran, Kontrakan Pak Sulistiyono No 16, Sebelah Laundry Badil Gang Kecil Masuk Rumah Warna Hijau No 16'
 
