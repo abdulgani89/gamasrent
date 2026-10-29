@@ -78,11 +78,17 @@ export function slugify(text: string): string {
 }
 
 /**
- * Format nomor WhatsApp
+ * Format nomor WhatsApp ke format internasional (628xx)
  */
 export function formatWhatsApp(number: string): string {
   // Remove all non-digits
-  return number.replace(/\D/g, '')
+  let clean = number.replace(/\D/g, '')
+  // Convert local format 08xx -> 628xx
+  if (clean.startsWith('0')) {
+    clean = '62' + clean.slice(1)
+  }
+  // If already starts with 62 or other country code, keep as is
+  return clean
 }
 
 /**
