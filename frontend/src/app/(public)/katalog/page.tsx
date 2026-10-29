@@ -35,7 +35,7 @@ async function getUnits(searchParams: Record<string, string | string[] | undefin
     isActive: true,
     operationalStatus: OperationalStatus.AVAILABLE,
   }
-  if (search) where.name = { contains: search }
+  if (search) where.name = { contains: search, mode: 'insensitive' }
   if (category) where.category = { slug: category }
   if (minPrice !== undefined || maxPrice !== undefined) {
     where.dailyRate = {}

@@ -360,9 +360,9 @@ export const bookingService = {
     if (status) where.status = status as BookingStatus
     if (search) {
       where.OR = [
-        { referenceCode: { contains: search } },
-        { customer: { name: { contains: search } } },
-        { customer: { phone: { contains: search } } },
+        { referenceCode: { contains: search, mode: 'insensitive' } },
+        { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { customer: { phone: { contains: search, mode: 'insensitive' } } },
       ]
     }
     if (startDate) where.startAt = { gte: startDate }

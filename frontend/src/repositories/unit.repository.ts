@@ -13,7 +13,7 @@ export const unitRepository = {
     }
 
     if (search) {
-      where.name = { contains: search }
+      where.name = { contains: search, mode: 'insensitive' }
     }
 
     if (category) {
