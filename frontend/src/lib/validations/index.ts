@@ -16,7 +16,7 @@ export const updateCategorySchema = createCategorySchema.partial()
 export const createUnitSchema = z.object({
   categoryId: z.string().min(1, 'Kategori wajib dipilih'),
   name: z.string().min(2, 'Nama minimal 2 karakter').max(200),
-  slug: z.string().min(2).max(200).regex(/^[a-z0-9-]+$/, 'Slug hanya boleh huruf kecil, angka, dan tanda hubung'),
+  slug: z.string().min(2).max(200).regex(/^[a-z0-9-]+$/, 'Slug hanya boleh huruf kecil, angka, dan tanda hubung').optional(),
   description: z.string().max(2000).optional(),
   specifications: z.record(z.string(), z.string()).optional(),
   facilities: z.array(z.string()).default([]),
