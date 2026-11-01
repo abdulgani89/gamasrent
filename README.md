@@ -26,7 +26,7 @@ npm run dev
 ```
 
 Buka di browser:
-- 🌐 **Website Publik**: [http://localhost:3000](http://localhost:3000)
-- 🛡️ **Dashboard Admin**: [http://localhost:3000/admin-panel](http://localhost:3000/admin-panel) (Login: `admin@gamasrent.com` / `adminpassword123`)
+- 🌐 **Website Publik**: (gamasrent.vercel.app)
 
-Dokumentasi lengkap arsitektur, database, API, dan pengujian dapat dilihat di [frontend/README.md](file:///c:/Users/Muhamad%20Abdul%20Gani/GamasRent/frontend/README.md).
+
+Dokumentasi lengkap arsitektur, database, API, dan pengujian dapat dilihat di [frontend/README.md].
