@@ -4,29 +4,10 @@ Platform penyewaan perlengkapan acara (*Sound System, Mic Wireless, Palu Sidang,
 
 ---
 
-## ⚡ Panduan Cepat Menjalankan Aplikasi
+## ⚡ Cara Menjalankan Aplikasi
 
-Aplikasi berada di folder `frontend/`. Buka terminal **PowerShell** dan jalankan:
+Aplikasi sudah tersedia dan dapat diakses melalui:
 
-```powershell
-# 1. Masuk ke folder frontend
-cd frontend
+🌐 **Website:** https://gamasrent.vercel.app
 
-# 2. Instal dependensi
-npm install --legacy-peer-deps
-
-# 3. Sinkronkan database SQLite lokal (zero-config, tanpa Docker/server external)
-npx prisma db push
-
-# 4. Masukkan data awal demo
-npm run seed
-
-# 5. Jalankan server aplikasi
-npm run dev
-```
-
-Buka di browser:
-- 🌐 **Website Publik**: (gamasrent.vercel.app)
-
-
-Dokumentasi lengkap arsitektur, database, API, dan pengujian dapat dilihat di [frontend/README.md].
+Untuk menjalankan versi lokal, lihat dokumentasi lengkap di [frontend/README.md].
