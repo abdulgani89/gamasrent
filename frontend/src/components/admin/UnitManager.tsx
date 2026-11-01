@@ -68,6 +68,22 @@ export default function UnitManager({ initialUnits, categories }: UnitManagerPro
   const [formFacilities, setFormFacilities] = useState('')
   const [formIsFeatured, setFormIsFeatured] = useState(false)
 
+  // Edit Modal State
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editingUnit, setEditingUnit] = useState<UnitItem | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editCategory, setEditCategory] = useState('')
+  const [editDailyRate, setEditDailyRate] = useState('')
+  const [editDeposit, setEditDeposit] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editImageUrl, setEditImageUrl] = useState('')
+  const [editFacilities, setEditFacilities] = useState('')
+  const [editIsFeatured, setEditIsFeatured] = useState(false)
+
+  // Delete Confirm State
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
+
   const filteredUnits = units.filter((u) => {
     const matchSearch = u.name.toLowerCase().includes(search.toLowerCase())
     const matchCategory = !filterCategory || u.category.slug === filterCategory
@@ -85,7 +101,6 @@ export default function UnitManager({ initialUnits, categories }: UnitManagerPro
         body: JSON.stringify({ operationalStatus: newStatus }),
       })
       if (!res.ok) throw new Error('Gagal memperbarui status unit')
-      const updated = await res.json()
       setUnits((prev) =>
         prev.map((u) => (u.id === unitId ? { ...u, operationalStatus: newStatus } : u))
       )
@@ -171,6 +186,123 @@ export default function UnitManager({ initialUnits, categories }: UnitManagerPro
       setFormFacilities('')
       setFormDailyRate('100000')
       setFormDeposit('50000')
+      router.refresh()
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message)
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  // Open Edit Modal
+  const openEditModal = (unit: UnitItem) => {
+    setEditingUnit(unit)
+    setEditName(unit.name)
+    setEditCategory(unit.categoryId)
+    setEditDailyRate(String(unit.dailyRate))
+    setEditDeposit(String(unit.depositAmount))
+    setEditDescription(unit.description || '')
+    setEditImageUrl(unit.images[0]?.imageUrl || '')
+    setEditIsFeatured(unit.isFeatured)
+    setEditFacilities('')
+    setIsEditOpen(true)
+    setErrorMsg(null)
+  }
+
+  // Handle Update Unit
+  const handleUpdateUnit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingUnit) return
+    setLoadingAction('edit')
+    setErrorMsg(null)
+
+    try {
+      const payload: Record<string, unknown> = {
+        name: editName,
+        categoryId: editCategory,
+        dailyRate: parseFloat(editDailyRate),
+        depositAmount: parseFloat(editDeposit || '0'),
+        description: editDescription,
+        isFeatured: editIsFeatured,
+      }
+
+      if (editFacilities.trim()) {
+        payload.facilities = editFacilities
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      }
+
+      if (editImageUrl.trim()) {
+        payload.images = [{ imageUrl: editImageUrl, altText: editName, sortOrder: 0 }]
+      }
+
+      const res = await fetch(`/api/admin/units/${editingUnit.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Gagal memperbarui unit')
+
+      // Update local state with new values
+      setUnits((prev) =>
+        prev.map((u) =>
+          u.id === editingUnit.id
+            ? {
+                ...u,
+                name: editName,
+                categoryId: editCategory,
+                category: categories.find((c) => c.id === editCategory) || u.category,
+                dailyRate: parseFloat(editDailyRate),
+                depositAmount: parseFloat(editDeposit || '0'),
+                description: editDescription,
+                isFeatured: editIsFeatured,
+                images: editImageUrl.trim()
+                  ? [{ id: u.images[0]?.id || 'new', imageUrl: editImageUrl }]
+                  : u.images,
+              }
+            : u
+        )
+      )
+
+      setIsEditOpen(false)
+      setEditingUnit(null)
+      router.refresh()
+    } catch (err: unknown) {
+      setErrorMsg((err as Error).message)
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  // Open Delete Confirm
+  const openDeleteConfirm = (unitId: string, unitName: string) => {
+    setDeleteConfirmId(unitId)
+    setDeleteConfirmName(unitName)
+    setErrorMsg(null)
+  }
+
+  // Handle Delete (Archive) Unit
+  const handleDeleteUnit = async () => {
+    if (!deleteConfirmId) return
+    setLoadingAction('delete-' + deleteConfirmId)
+    setErrorMsg(null)
+
+    try {
+      const res = await fetch(`/api/admin/units/${deleteConfirmId}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Gagal menghapus unit')
+      }
+
+      setUnits((prev) => prev.filter((u) => u.id !== deleteConfirmId))
+      setDeleteConfirmId(null)
+      setDeleteConfirmName('')
       router.refresh()
     } catch (err: unknown) {
       setErrorMsg((err as Error).message)
@@ -334,15 +466,38 @@ export default function UnitManager({ initialUnits, categories }: UnitManagerPro
                         </button>
                       </td>
 
-                      <td className="py-4 px-6 text-right space-x-2">
-                        <Link
-                          href={`/unit/${u.slug}`}
-                          target="_blank"
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-medium transition-colors"
-                          title="Lihat halaman publik"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" /> Lihat
-                        </Link>
+                      <td className="py-4 px-6 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Link
+                            href={`/unit/${u.slug}`}
+                            target="_blank"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-medium transition-colors"
+                            title="Lihat halaman publik"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> Lihat
+                          </Link>
+                          <button
+                            onClick={() => openEditModal(u)}
+                            disabled={isLoading}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-medium transition-colors"
+                            title="Edit unit"
+                          >
+                            <Edit className="w-3.5 h-3.5" /> Edit
+                          </button>
+                          <button
+                            onClick={() => openDeleteConfirm(u.id, u.name)}
+                            disabled={isLoading || loadingAction === 'delete-' + u.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-xs font-medium transition-colors disabled:opacity-50"
+                            title="Hapus unit"
+                          >
+                            {loadingAction === 'delete-' + u.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                            Hapus
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -507,6 +662,221 @@ export default function UnitManager({ initialUnits, categories }: UnitManagerPro
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Edit Unit */}
+      {isEditOpen && editingUnit && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Edit className="w-5 h-5 text-blue-500" /> Edit Unit Rental
+              </h2>
+              <button
+                onClick={() => { setIsEditOpen(false); setEditingUnit(null) }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {errorMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center justify-between">
+                <span>{errorMsg}</span>
+                <button onClick={() => setErrorMsg(null)} className="text-red-500 hover:text-red-800">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateUnit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nama Unit Rental *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Kategori *
+                  </label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tarif Sewa Per Hari (Rp) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1000"
+                    value={editDailyRate}
+                    onChange={(e) => setEditDailyRate(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Uang Jaminan / Deposit (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editDeposit}
+                    onChange={(e) => setEditDeposit(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    URL Foto Utama (kosongkan jika tidak diubah)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={editImageUrl}
+                    onChange={(e) => setEditImageUrl(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Deskripsi Singkat
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Keterangan kondisi, fungsi, atau fitur utama unit..."
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Fasilitas / Kelengkapan Baru (Pisahkan dengan koma, kosongkan jika tidak diubah)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Kabel AUX, Mic Cadangan, Tripod Stand"
+                  value={editFacilities}
+                  onChange={(e) => setEditFacilities(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="edit-featured-check"
+                  checked={editIsFeatured}
+                  onChange={(e) => setEditIsFeatured(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-500 focus:ring-blue-400"
+                />
+                <label htmlFor="edit-featured-check" className="text-xs text-slate-700 font-medium cursor-pointer">
+                  Tampilkan sebagai unit rekomendasi utama (Featured)
+                </label>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { setIsEditOpen(false); setEditingUnit(null) }}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={loadingAction === 'edit'}
+                  className="px-5 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold shadow-md shadow-blue-500/20 flex items-center gap-2 disabled:opacity-60"
+                >
+                  {loadingAction === 'edit' ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan Perubahan'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl">
+            <div className="flex flex-col items-center text-center gap-3 mb-6">
+              <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-7 h-7 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Hapus Unit Ini?</h3>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Unit <span className="font-semibold text-slate-700">&ldquo;{deleteConfirmName}&rdquo;</span> akan diarsipkan dan tidak muncul di katalog publik. Data booking yang sudah ada tetap tersimpan.
+                </p>
+              </div>
+            </div>
+
+            {errorMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
+                {errorMsg}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setDeleteConfirmId(null); setDeleteConfirmName(''); setErrorMsg(null) }}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDeleteUnit}
+                disabled={loadingAction === 'delete-' + deleteConfirmId}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold shadow-md shadow-red-500/20 flex items-center justify-center gap-2 disabled:opacity-60 transition-colors"
+              >
+                {loadingAction === 'delete-' + deleteConfirmId ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Menghapus...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" /> Ya, Hapus
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
