@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useCallback } from 'react'
-import { Search, SlidersHorizontal, X, ChevronDown } from 'lucide-react'
+import { Search, SlidersHorizontal, X, ChevronDown, Calendar } from 'lucide-react'
 import { type CatalogFilterInput } from '@/lib/validations'
 
 interface Category {
@@ -30,7 +30,15 @@ export default function CatalogFilter({ categories, currentFilter }: CatalogFilt
   const [search, setSearch] = useState(currentFilter.search || '')
   const [minPrice, setMinPrice] = useState(currentFilter.minPrice?.toString() || '')
   const [maxPrice, setMaxPrice] = useState(currentFilter.maxPrice?.toString() || '')
+  const [startDate, setStartDate] = useState(
+    currentFilter.startAt ? currentFilter.startAt.split('T')[0] : ''
+  )
+  const [endDate, setEndDate] = useState(
+    currentFilter.endAt ? currentFilter.endAt.split('T')[0] : ''
+  )
   const [isOpen, setIsOpen] = useState(false)
+
+  const today = new Date().toISOString().split('T')[0]
 
   const buildUrl = useCallback((overrides: Record<string, string | undefined>) => {
     const params = new URLSearchParams()
@@ -63,14 +71,40 @@ export default function CatalogFilter({ categories, currentFilter }: CatalogFilt
     router.push(buildUrl({ minPrice: minPrice || undefined, maxPrice: maxPrice || undefined }))
   }
 
+  const handleDateFilter = () => {
+    if (!startDate) {
+      router.push(buildUrl({ startAt: undefined, endAt: undefined }))
+      return
+    }
+    const s = new Date(`${startDate}T00:00:00`)
+    const effectiveEnd = endDate || startDate
+    const e = new Date(`${effectiveEnd}T23:59:59.999`)
+    router.push(buildUrl({ startAt: s.toISOString(), endAt: e.toISOString() }))
+  }
+
+  const handleClearDates = () => {
+    setStartDate('')
+    setEndDate('')
+    router.push(buildUrl({ startAt: undefined, endAt: undefined }))
+  }
+
   const handleReset = () => {
     setSearch('')
     setMinPrice('')
     setMaxPrice('')
+    setStartDate('')
+    setEndDate('')
     router.push('/katalog')
   }
 
-  const hasActiveFilters = !!(currentFilter.search || currentFilter.category || currentFilter.minPrice || currentFilter.maxPrice)
+  const hasActiveFilters = !!(
+    currentFilter.search ||
+    currentFilter.category ||
+    currentFilter.minPrice ||
+    currentFilter.maxPrice ||
+    currentFilter.startAt ||
+    currentFilter.endAt
+  )
 
   return (
     <>
@@ -104,6 +138,58 @@ export default function CatalogFilter({ categories, currentFilter }: CatalogFilt
               className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
           </form>
+        </div>
+
+        {/* Date Filter */}
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+              <Calendar className="w-4 h-4 text-orange-500" />
+              Ketersediaan Tanggal
+            </h3>
+            {(startDate || currentFilter.startAt) && (
+              <button
+                type="button"
+                onClick={handleClearDates}
+                className="text-[11px] text-red-500 hover:text-red-700 font-medium"
+              >
+                Hapus
+              </button>
+            )}
+          </div>
+          <div className="space-y-2.5">
+            <div>
+              <label className="block text-[11px] text-gray-500 font-medium mb-1">Mulai</label>
+              <input
+                type="date"
+                min={today}
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value)
+                  if (endDate && e.target.value >= endDate) setEndDate('')
+                }}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 font-medium mb-1">Selesai</label>
+              <input
+                type="date"
+                min={startDate || today}
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleDateFilter}
+              disabled={!startDate}
+              className="w-full py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors"
+            >
+              Cek Unit Tersedia
+            </button>
+          </div>
         </div>
 
         {/* Sort */}

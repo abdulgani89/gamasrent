@@ -31,6 +31,8 @@ interface BookingFormProps {
     depositAmount: number
   }
   whatsappNumber: string
+  initialStartDate?: string
+  initialEndDate?: string
 }
 
 interface BookingResult {
@@ -46,7 +48,7 @@ interface BookingResult {
   deliveryLocation?: string
 }
 
-export default function BookingForm({ unit, whatsappNumber }: BookingFormProps) {
+export default function BookingForm({ unit, whatsappNumber, initialStartDate, initialEndDate }: BookingFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -57,6 +59,8 @@ export default function BookingForm({ unit, whatsappNumber }: BookingFormProps) 
     resolver: zodResolver(bookingFormSchema),
     defaultValues: {
       pickupOption: 'SELF_PICKUP',
+      startDate: initialStartDate || '',
+      endDate: initialEndDate || '',
       startTime: '08:00',
       endTime: '08:00',
     },

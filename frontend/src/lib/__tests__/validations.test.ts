@@ -13,8 +13,8 @@ describe('Zod Validation Schemas', () => {
         customerName: 'Budi Santoso',
         customerPhone: '081234567890',
         customerEmail: 'budi@example.com',
-        startAt: '2026-10-20T08:00:00.000Z',
-        endAt: '2026-10-22T08:00:00.000Z',
+        startAt: new Date(Date.now() + 86400000).toISOString(),
+        endAt: new Date(Date.now() + 172800000).toISOString(),
         pickupOption: 'SELF_PICKUP',
       }
 
@@ -27,8 +27,8 @@ describe('Zod Validation Schemas', () => {
         unitId: 'unit-123',
         customerName: 'Budi Santoso',
         customerPhone: '123', // less than 9 digits
-        startAt: '2026-10-20T08:00:00.000Z',
-        endAt: '2026-10-22T08:00:00.000Z',
+        startAt: new Date(Date.now() + 86400000).toISOString(),
+        endAt: new Date(Date.now() + 172800000).toISOString(),
       }
 
       const result = createBookingSchema.safeParse(invalidData)

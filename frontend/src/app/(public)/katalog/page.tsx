@@ -3,8 +3,9 @@ import { prisma } from '@/lib/prisma'
 import { catalogFilterSchema } from '@/lib/validations'
 import UnitCard, { UnitCardSkeleton } from '@/components/catalog/UnitCard'
 import CatalogFilter from '@/components/catalog/CatalogFilter'
-import { OperationalStatus } from '@/lib/types'
+import { OperationalStatus, BookingStatus } from '@/lib/types'
 import { Prisma } from '@prisma/client'
+import { Calendar } from 'lucide-react'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
@@ -29,7 +30,7 @@ async function getUnits(searchParams: Record<string, string | string[] | undefin
   }
 
   const filter = parsed.data
-  const { search, category, minPrice, maxPrice, sortBy, page = 1, limit = 12 } = filter
+  const { search, category, minPrice, maxPrice, sortBy, startAt, endAt, page = 1, limit = 12 } = filter
 
   const where: Prisma.RentalUnitWhereInput = {
     isActive: true,
@@ -41,6 +42,37 @@ async function getUnits(searchParams: Record<string, string | string[] | undefin
     where.dailyRate = {}
     if (minPrice !== undefined) where.dailyRate.gte = minPrice
     if (maxPrice !== undefined) where.dailyRate.lte = maxPrice
+  }
+
+  // Filter unit yang tidak memiliki jadwal/booking bentrok pada rentang tanggal
+  if (startAt) {
+    const startDate = new Date(startAt)
+    const effectiveEndAt = endAt || startAt
+    const endDate = new Date(effectiveEndAt)
+    if (!effectiveEndAt.includes('T') || effectiveEndAt.endsWith('00:00:00.000Z')) {
+      endDate.setHours(23, 59, 59, 999)
+    }
+
+    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+      const now = new Date()
+      where.bookings = {
+        none: {
+          OR: [
+            {
+              status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
+              startAt: { lt: endDate },
+              endAt: { gt: startDate },
+            },
+            {
+              status: BookingStatus.PENDING,
+              holdExpiresAt: { gt: now },
+              startAt: { lt: endDate },
+              endAt: { gt: startDate },
+            },
+          ],
+        },
+      }
+    }
   }
 
   let orderBy: Prisma.RentalUnitOrderByWithRelationInput = { createdAt: 'desc' }
@@ -91,6 +123,23 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
           <p className="text-gray-500 text-sm">
             {total > 0 ? `Menampilkan ${total} unit tersedia` : 'Tidak ada unit yang cocok dengan filter'}
           </p>
+          {filter.startAt && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-orange-800 bg-orange-50 border border-orange-200 px-3.5 py-2 rounded-xl w-fit">
+              <Calendar className="w-4 h-4 text-orange-600 shrink-0" />
+              <span>
+                Ketersediaan untuk tanggal: <strong>{new Date(filter.startAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</strong>
+                {filter.endAt && (
+                  <> s/d <strong>{new Date(filter.endAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></>
+                )}
+              </span>
+              <a
+                href="/katalog"
+                className="ml-2 font-semibold text-orange-600 hover:text-orange-900 underline"
+              >
+                Reset tanggal
+              </a>
+            </div>
+          )}
         </div>
       </div>
 
@@ -117,6 +166,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                         dailyRate: unit.dailyRate.toString(),
                         depositAmount: unit.depositAmount.toString(),
                       }}
+                      dateParams={{ startAt: filter.startAt, endAt: filter.endAt }}
                     />
                   ))}
                 </div>
@@ -147,7 +197,9 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Tidak ada unit ditemukan</h3>
                 <p className="text-gray-500 text-sm mb-6">
-                  Coba ubah filter pencarian Anda atau hapus beberapa filter
+                  {filter.startAt 
+                    ? 'Semua unit pada rentang tanggal yang dipilih sedang dipesan atau diblokir. Coba pilih tanggal lain.'
+                    : 'Coba ubah filter pencarian Anda atau hapus beberapa filter'}
                 </p>
                 <a href="/katalog" className="btn-outline text-sm">
                   Reset Filter

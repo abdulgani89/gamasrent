@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client'
 
 export const unitRepository = {
   async findForCatalog(filter: CatalogFilterInput) {
-    const { search, category, minPrice, maxPrice, sortBy, page = 1, limit = 12 } = filter
+    const { search, category, minPrice, maxPrice, sortBy, startAt, endAt, page = 1, limit = 12 } = filter
 
     const where: Prisma.RentalUnitWhereInput = {
       isActive: true,
@@ -24,6 +24,37 @@ export const unitRepository = {
       where.dailyRate = {}
       if (minPrice !== undefined) where.dailyRate.gte = minPrice
       if (maxPrice !== undefined) where.dailyRate.lte = maxPrice
+    }
+
+    // Filter unit yang tidak memiliki booking/jadwal bertabrakan
+    if (startAt) {
+      const startDate = new Date(startAt)
+      const effectiveEndAt = endAt || startAt
+      const endDate = new Date(effectiveEndAt)
+      if (!effectiveEndAt.includes('T') || effectiveEndAt.endsWith('00:00:00.000Z')) {
+        endDate.setHours(23, 59, 59, 999)
+      }
+
+      if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+        const now = new Date()
+        where.bookings = {
+          none: {
+            OR: [
+              {
+                status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
+                startAt: { lt: endDate },
+                endAt: { gt: startDate },
+              },
+              {
+                status: BookingStatus.PENDING,
+                holdExpiresAt: { gt: now },
+                startAt: { lt: endDate },
+                endAt: { gt: startDate },
+              },
+            ],
+          },
+        }
+      }
     }
 
     let orderBy: Prisma.RentalUnitOrderByWithRelationInput = { createdAt: 'desc' }

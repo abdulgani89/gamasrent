@@ -10,6 +10,7 @@ import type { Metadata } from 'next'
 
 interface UnitDetailPageProps {
   params: Promise<{ slug: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
 export async function generateMetadata({ params }: UnitDetailPageProps): Promise<Metadata> {
@@ -29,8 +30,11 @@ export async function generateMetadata({ params }: UnitDetailPageProps): Promise
   }
 }
 
-export default async function UnitDetailPage({ params }: UnitDetailPageProps) {
+export default async function UnitDetailPage({ params, searchParams }: UnitDetailPageProps) {
   const { slug } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const initialStartDate = typeof resolvedSearchParams.startAt === 'string' ? resolvedSearchParams.startAt.split('T')[0] : undefined
+  const initialEndDate = typeof resolvedSearchParams.endAt === 'string' ? resolvedSearchParams.endAt.split('T')[0] : undefined
 
   const [unit, settings] = await Promise.all([
     prisma.rentalUnit.findUnique({
@@ -182,6 +186,8 @@ export default async function UnitDetailPage({ params }: UnitDetailPageProps) {
                       depositAmount: Number(unit.depositAmount),
                     }}
                     whatsappNumber={settings?.whatsappNumber || '6288223004545'}
+                    initialStartDate={initialStartDate}
+                    initialEndDate={initialEndDate}
                   />
                 ) : (
                   <div className="text-center py-6">

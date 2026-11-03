@@ -17,14 +17,23 @@ interface UnitCardProps {
     isFeatured?: boolean
   }
   className?: string
+  dateParams?: { startAt?: string; endAt?: string }
 }
 
-export default function UnitCard({ unit, className }: UnitCardProps) {
+export default function UnitCard({ unit, className, dateParams }: UnitCardProps) {
   const mainImage = unit.images[0]
   const isAvailable = unit.operationalStatus === 'AVAILABLE'
 
+  let targetUrl = `/unit/${unit.slug}`
+  if (dateParams?.startAt) {
+    const q = new URLSearchParams()
+    q.set('startAt', dateParams.startAt)
+    if (dateParams.endAt) q.set('endAt', dateParams.endAt)
+    targetUrl += `?${q.toString()}`
+  }
+
   return (
-    <Link href={`/unit/${unit.slug}`} className={cn('group block', className)}>
+    <Link href={targetUrl} className={cn('group block', className)}>
       <div className="card-hover overflow-hidden h-full flex flex-col">
         {/* Image */}
         <div className="relative h-52 bg-gray-100 overflow-hidden">
@@ -103,14 +112,15 @@ export default function UnitCard({ unit, className }: UnitCardProps) {
 
 export function UnitCardSkeleton() {
   return (
-    <div className="card overflow-hidden h-full">
-      <div className="skeleton h-52"></div>
+    <div className="card overflow-hidden">
+      <div className="h-52 bg-gray-200 animate-pulse" />
       <div className="p-5 space-y-3">
-        <div className="skeleton h-5 w-3/4"></div>
-        <div className="skeleton h-4 w-full"></div>
-        <div className="skeleton h-4 w-2/3"></div>
-        <div className="pt-4 border-t border-gray-100">
-          <div className="skeleton h-7 w-1/2"></div>
+        <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+        <div className="h-3 bg-gray-200 rounded animate-pulse w-full" />
+        <div className="h-3 bg-gray-200 rounded animate-pulse w-2/3" />
+        <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
+          <div className="h-6 bg-gray-200 rounded animate-pulse w-24" />
+          <div className="h-6 bg-gray-200 rounded animate-pulse w-16" />
         </div>
       </div>
     </div>

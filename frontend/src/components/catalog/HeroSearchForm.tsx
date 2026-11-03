@@ -24,8 +24,13 @@ export default function HeroSearchForm({ categories }: HeroSearchFormProps) {
     e.preventDefault()
     const params = new URLSearchParams()
     if (selectedCategory) params.set('category', selectedCategory)
-    if (startDate) params.set('startAt', new Date(startDate).toISOString())
-    if (endDate) params.set('endAt', new Date(endDate).toISOString())
+    if (startDate) {
+      const s = new Date(`${startDate}T00:00:00`)
+      params.set('startAt', s.toISOString())
+      const effectiveEndDate = endDate || startDate
+      const eDate = new Date(`${effectiveEndDate}T23:59:59.999`)
+      params.set('endAt', eDate.toISOString())
+    }
     router.push(`/katalog?${params.toString()}`)
   }
 
