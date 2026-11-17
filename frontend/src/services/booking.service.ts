@@ -23,118 +23,125 @@ export const bookingService = {
     const startAt = new Date(input.startAt)
     const endAt = new Date(input.endAt)
 
-    // Use a transaction for atomic conflict check + create
-    return await prisma.$transaction(async (tx) => {
-      // 1. Check unit exists and is available
-      const unit = await tx.rentalUnit.findUnique({
-        where: { id: input.unitId, isActive: true },
-      })
-      if (!unit) throw new Error('Unit tidak ditemukan atau tidak aktif')
-      if (unit.operationalStatus !== 'AVAILABLE') {
-        throw new Error(`Unit sedang ${unit.operationalStatus === 'MAINTENANCE' ? 'dalam maintenance' : 'tidak tersedia'}`)
-      }
+    // 1. Check unit exists and is available (read outside transaction)
+    const unit = await prisma.rentalUnit.findUnique({
+      where: { id: input.unitId, isActive: true },
+    })
+    if (!unit) throw new Error('Unit tidak ditemukan atau tidak aktif')
+    if (unit.operationalStatus !== 'AVAILABLE') {
+      throw new Error(`Unit sedang ${unit.operationalStatus === 'MAINTENANCE' ? 'dalam maintenance' : 'tidak tersedia'}`)
+    }
 
-      // 2. Check for conflicts (CONFIRMED, ACTIVE, or active PENDING)
-      const now = new Date()
-      const conflicts = await tx.booking.findMany({
-        where: {
-          unitId: input.unitId,
-          OR: [
-            {
-              status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
-              startAt: { lt: endAt },
-              endAt: { gt: startAt },
-            },
-            {
-              status: BookingStatus.PENDING,
-              holdExpiresAt: { gt: now },
-              startAt: { lt: endAt },
-              endAt: { gt: startAt },
-            },
-          ],
-        },
-      })
-      if (conflicts.length > 0) {
-        throw new Error('Unit tidak tersedia pada tanggal yang dipilih. Silakan pilih tanggal lain.')
-      }
+    // 2. Get hold duration from settings (read outside transaction)
+    const settings = await prisma.businessSetting.findFirst()
+    const holdMinutes = settings?.holdDurationMinutes ?? 30
+    const holdExpiresAt = new Date(Date.now() + holdMinutes * 60 * 1000)
 
-      // 3. Find or create customer
-      let customer = await tx.customer.findFirst({
-        where: { phone: input.customerPhone },
-      })
-      if (!customer) {
-        customer = await tx.customer.create({
-          data: {
-            name: input.customerName,
-            phone: input.customerPhone,
-            email: input.customerEmail || undefined,
+    // 3. Calculate price
+    const duration = calculateDuration(startAt, endAt)
+    const dailyRate = Number(unit.dailyRate)
+    const extraCost = input.extraCost ?? 0
+    const totalPrice = duration * dailyRate + extraCost
+    const referenceCode = generateReferenceCode()
+
+    // 4. Atomic conflict check + booking creation inside transaction
+    const booking = await prisma.$transaction(
+      async (tx) => {
+        // Check for conflicts (CONFIRMED, ACTIVE, or active PENDING)
+        const now = new Date()
+        const conflicts = await tx.booking.findMany({
+          where: {
+            unitId: input.unitId,
+            OR: [
+              {
+                status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
+                startAt: { lt: endAt },
+                endAt: { gt: startAt },
+              },
+              {
+                status: BookingStatus.PENDING,
+                holdExpiresAt: { gt: now },
+                startAt: { lt: endAt },
+                endAt: { gt: startAt },
+              },
+            ],
           },
         })
-      } else {
-        // Update name if changed
-        await tx.customer.update({
-          where: { id: customer.id },
-          data: { name: input.customerName },
+        if (conflicts.length > 0) {
+          throw new Error('Unit tidak tersedia pada tanggal yang dipilih. Silakan pilih tanggal lain.')
+        }
+
+        // Find or create customer
+        let customer = await tx.customer.findFirst({
+          where: { phone: input.customerPhone },
         })
+        if (!customer) {
+          customer = await tx.customer.create({
+            data: {
+              name: input.customerName,
+              phone: input.customerPhone,
+              email: input.customerEmail || undefined,
+            },
+          })
+        } else if (customer.name !== input.customerName) {
+          customer = await tx.customer.update({
+            where: { id: customer.id },
+            data: { name: input.customerName },
+          })
+        }
+
+        // Create booking
+        const newBooking = await tx.booking.create({
+          data: {
+            referenceCode,
+            customerId: customer.id,
+            unitId: input.unitId,
+            startAt,
+            endAt,
+            pickupOption: input.pickupOption || PickupOption.SELF_PICKUP,
+            deliveryLocation: input.deliveryLocation,
+            dailyRateSnapshot: dailyRate,
+            duration,
+            extraCost,
+            totalPrice,
+            holdExpiresAt,
+            customerNotes: input.customerNotes,
+            status: BookingStatus.PENDING,
+          },
+          include: {
+            unit: { include: { category: true } },
+            customer: true,
+          },
+        })
+
+        // Record status history
+        await tx.bookingStatusHistory.create({
+          data: {
+            bookingId: newBooking.id,
+            fromStatus: undefined,
+            toStatus: BookingStatus.PENDING,
+            note: 'Booking dibuat oleh pelanggan',
+          },
+        })
+
+        return newBooking
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
       }
+    )
 
-      // 4. Get hold duration from settings
-      const settings = await tx.businessSetting.findFirst()
-      const holdMinutes = settings?.holdDurationMinutes ?? 30
-      const holdExpiresAt = new Date(Date.now() + holdMinutes * 60 * 1000)
+    // 5. Track analytics asynchronously outside the transaction (non-blocking)
+    prisma.analyticsEvent.create({
+      data: {
+        eventType: 'booking_created',
+        unitId: input.unitId,
+        metadata: JSON.stringify({ referenceCode, duration, totalPrice }),
+      },
+    }).catch(() => {})
 
-      // 5. Calculate price
-      const duration = calculateDuration(startAt, endAt)
-      const dailyRate = Number(unit.dailyRate)
-      const extraCost = input.extraCost ?? 0
-      const totalPrice = duration * dailyRate + extraCost
-
-      // 6. Create booking
-      const referenceCode = generateReferenceCode()
-      const booking = await tx.booking.create({
-        data: {
-          referenceCode,
-          customerId: customer.id,
-          unitId: input.unitId,
-          startAt,
-          endAt,
-          pickupOption: input.pickupOption || PickupOption.SELF_PICKUP,
-          deliveryLocation: input.deliveryLocation,
-          dailyRateSnapshot: dailyRate,
-          duration,
-          extraCost,
-          totalPrice,
-          holdExpiresAt,
-          customerNotes: input.customerNotes,
-          status: BookingStatus.PENDING,
-        },
-        include: {
-          unit: { include: { category: true } },
-          customer: true,
-        },
-      })
-
-      // 7. Record status history
-      await tx.bookingStatusHistory.create({
-        data: {
-          bookingId: booking.id,
-          fromStatus: undefined,
-          toStatus: BookingStatus.PENDING,
-          note: 'Booking dibuat oleh pelanggan',
-        },
-      })
-
-      // 8. Track analytics
-      await tx.analyticsEvent.create({
-        data: {
-          eventType: 'booking_created',
-          unitId: input.unitId,
-          metadata: JSON.stringify({ referenceCode, duration, totalPrice }),
-        },
-      })
-
-      return booking
-    })
+    return booking
   },
 
   /**
@@ -161,186 +168,203 @@ export const bookingService = {
       throw new Error('Tanggal selesai harus setelah tanggal mulai')
     }
 
-    return await prisma.$transaction(async (tx) => {
-      // 1. Verify unit exists
-      const unit = await tx.rentalUnit.findUnique({
-        where: { id: input.unitId, isActive: true },
-      })
-      if (!unit) throw new Error('Unit tidak ditemukan atau tidak aktif')
+    // 1. Verify unit exists outside transaction
+    const unit = await prisma.rentalUnit.findUnique({
+      where: { id: input.unitId, isActive: true },
+    })
+    if (!unit) throw new Error('Unit tidak ditemukan atau tidak aktif')
 
-      // 2. Check for conflicts with other confirmed, active, or pending bookings
-      const now = new Date()
-      const conflicts = await tx.booking.findMany({
-        where: {
-          unitId: input.unitId,
-          OR: [
-            {
-              status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
-              startAt: { lt: endAt },
-              endAt: { gt: startAt },
+    const phone = input.picPhone?.replace(/\D/g, '') || '628000000000'
+    const customerName = `[Internal GAMAS] ${input.picName}`
+    const duration = calculateDuration(startAt, endAt)
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+    const referenceCode = `GR-INT-${Date.now().toString(36).toUpperCase()}-${randomSuffix}`
+
+    return await prisma.$transaction(
+      async (tx) => {
+        // 2. Check for conflicts with other confirmed, active, or pending bookings
+        const now = new Date()
+        const conflicts = await tx.booking.findMany({
+          where: {
+            unitId: input.unitId,
+            OR: [
+              {
+                status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
+                startAt: { lt: endAt },
+                endAt: { gt: startAt },
+              },
+              {
+                status: BookingStatus.PENDING,
+                holdExpiresAt: { gt: now },
+                startAt: { lt: endAt },
+                endAt: { gt: startAt },
+              },
+            ],
+          },
+          include: { customer: true },
+        })
+
+        if (conflicts.length > 0) {
+          const c = conflicts[0]
+          throw new Error(
+            `Unit sudah memiliki jadwal pada tanggal tersebut (${c.customer.name} - Ref: ${c.referenceCode}). Silakan pilih jadwal lain.`
+          )
+        }
+
+        // 3. Find or create internal customer
+        let customer = await tx.customer.findFirst({
+          where: { phone },
+        })
+
+        if (!customer) {
+          customer = await tx.customer.create({
+            data: {
+              name: customerName,
+              phone,
             },
-            {
-              status: BookingStatus.PENDING,
-              holdExpiresAt: { gt: now },
-              startAt: { lt: endAt },
-              endAt: { gt: startAt },
-            },
-          ],
-        },
-        include: { customer: true },
-      })
+          })
+        } else if (customer.name !== customerName) {
+          customer = await tx.customer.update({
+            where: { id: customer.id },
+            data: { name: customerName },
+          })
+        }
 
-      if (conflicts.length > 0) {
-        const c = conflicts[0]
-        throw new Error(
-          `Unit sudah memiliki jadwal pada tanggal tersebut (${c.customer.name} - Ref: ${c.referenceCode}). Silakan pilih jadwal lain.`
-        )
-      }
-
-      // 3. Find or create internal customer
-      const phone = input.picPhone?.replace(/\D/g, '') || '628000000000'
-      const customerName = `[Internal GAMAS] ${input.picName}`
-      let customer = await tx.customer.findFirst({
-        where: { phone },
-      })
-
-      if (!customer) {
-        customer = await tx.customer.create({
+        // 4. Create internal booking with Rp 0 price
+        const booking = await tx.booking.create({
           data: {
-            name: customerName,
-            phone,
+            referenceCode,
+            customerId: customer.id,
+            unitId: input.unitId,
+            startAt,
+            endAt,
+            pickupOption: PickupOption.SELF_PICKUP,
+            dailyRateSnapshot: 0,
+            duration,
+            extraCost: 0,
+            totalPrice: 0,
+            holdExpiresAt: null,
+            customerNotes: `Acara: ${input.eventName}\nPIC: ${input.picName}`,
+            adminNotes: input.notes
+              ? `[KEGIATAN INTERNAL GAMAS]\nAcara: ${input.eventName}\nPIC: ${input.picName}\nCatatan: ${input.notes}`
+              : `[KEGIATAN INTERNAL GAMAS]\nAcara: ${input.eventName}\nPIC: ${input.picName}`,
+            status: BookingStatus.CONFIRMED,
+          },
+          include: {
+            unit: true,
+            customer: true,
           },
         })
-      } else {
-        await tx.customer.update({
-          where: { id: customer.id },
-          data: { name: customerName },
+
+        // 5. Record status history
+        await tx.bookingStatusHistory.create({
+          data: {
+            bookingId: booking.id,
+            fromStatus: undefined,
+            toStatus: BookingStatus.CONFIRMED,
+            note: `Jadwal unit diblokir untuk Acara Internal GAMAS: ${input.eventName} (PIC: ${input.picName})`,
+            changedBy: input.adminId,
+          },
         })
+
+        return booking
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
       }
-
-      const duration = calculateDuration(startAt, endAt)
-      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
-      const referenceCode = `GR-INT-${Date.now().toString(36).toUpperCase()}-${randomSuffix}`
-
-      // 4. Create internal booking with Rp 0 price
-      const booking = await tx.booking.create({
-        data: {
-          referenceCode,
-          customerId: customer.id,
-          unitId: input.unitId,
-          startAt,
-          endAt,
-          pickupOption: PickupOption.SELF_PICKUP,
-          dailyRateSnapshot: 0,
-          duration,
-          extraCost: 0,
-          totalPrice: 0,
-          holdExpiresAt: null,
-          customerNotes: `Acara: ${input.eventName}\nPIC: ${input.picName}`,
-          adminNotes: input.notes
-            ? `[KEGIATAN INTERNAL GAMAS]\nAcara: ${input.eventName}\nPIC: ${input.picName}\nCatatan: ${input.notes}`
-            : `[KEGIATAN INTERNAL GAMAS]\nAcara: ${input.eventName}\nPIC: ${input.picName}`,
-          status: BookingStatus.CONFIRMED,
-        },
-        include: {
-          unit: true,
-          customer: true,
-        },
-      })
-
-      // 5. Record status history
-      await tx.bookingStatusHistory.create({
-        data: {
-          bookingId: booking.id,
-          fromStatus: undefined,
-          toStatus: BookingStatus.CONFIRMED,
-          note: `Jadwal unit diblokir untuk Acara Internal GAMAS: ${input.eventName} (PIC: ${input.picName})`,
-          changedBy: input.adminId,
-        },
-      })
-
-      return booking
-    })
+    )
   },
 
   /**
    * Update booking status with validation
    */
   async updateStatus(bookingId: string, input: UpdateBookingStatusInput, adminId: string) {
-    return await prisma.$transaction(async (tx) => {
-      const booking = await tx.booking.findUnique({
-        where: { id: bookingId },
-        include: { unit: true },
-      })
-      if (!booking) throw new Error('Booking tidak ditemukan')
+    let analyticsAction: { eventType: string; unitId: string; bookingId: string } | null = null
 
-      // Validate transition
-      const currentStatus = booking.status
-      const newStatus = input.status
-      const allowedTransitions = VALID_TRANSITIONS[currentStatus] || []
+    const updated = await prisma.$transaction(
+      async (tx) => {
+        const booking = await tx.booking.findUnique({
+          where: { id: bookingId },
+          include: { unit: true },
+        })
+        if (!booking) throw new Error('Booking tidak ditemukan')
 
-      if (!allowedTransitions.includes(newStatus)) {
-        throw new Error(
-          `Perubahan status tidak valid dari ${currentStatus} ke ${newStatus}. Status yang diperbolehkan: ${allowedTransitions.join(', ') || 'tidak ada'}`
-        )
-      }
+        // Validate transition
+        const currentStatus = booking.status
+        const newStatus = input.status
+        const allowedTransitions = VALID_TRANSITIONS[currentStatus] || []
 
-      // Check conflict if confirming
-      if (newStatus === BookingStatus.CONFIRMED) {
-        const conflicts = await tx.booking.findMany({
-          where: {
-            unitId: booking.unitId,
-            id: { not: bookingId },
-            status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
-            startAt: { lt: booking.endAt },
-            endAt: { gt: booking.startAt },
+        if (!allowedTransitions.includes(newStatus)) {
+          throw new Error(
+            `Perubahan status tidak valid dari ${currentStatus} ke ${newStatus}. Status yang diperbolehkan: ${allowedTransitions.join(', ') || 'tidak ada'}`
+          )
+        }
+
+        // Check conflict if confirming
+        if (newStatus === BookingStatus.CONFIRMED) {
+          const conflicts = await tx.booking.findMany({
+            where: {
+              unitId: booking.unitId,
+              id: { not: bookingId },
+              status: { in: [BookingStatus.CONFIRMED, BookingStatus.ACTIVE] },
+              startAt: { lt: booking.endAt },
+              endAt: { gt: booking.startAt },
+            },
+          })
+          if (conflicts.length > 0) {
+            throw new Error('Tidak dapat mengonfirmasi. Terdapat booking lain yang sudah terkonfirmasi pada tanggal yang bertabrakan.')
+          }
+        }
+
+        // Update booking
+        const res = await tx.booking.update({
+          where: { id: bookingId },
+          data: {
+            status: newStatus,
+            adminNotes: input.adminNotes ? `${booking.adminNotes ? booking.adminNotes + '\n' : ''}${input.adminNotes}` : undefined,
+            holdExpiresAt: newStatus === BookingStatus.CONFIRMED ? null : booking.holdExpiresAt,
+          },
+          include: {
+            customer: true,
+            unit: true,
+            paymentRecords: true,
           },
         })
-        if (conflicts.length > 0) {
-          throw new Error('Tidak dapat mengonfirmasi. Terdapat booking lain yang sudah terkonfirmasi pada tanggal yang bertabrakan.')
+
+        // Record history
+        await tx.bookingStatusHistory.create({
+          data: {
+            bookingId,
+            fromStatus: currentStatus,
+            toStatus: newStatus,
+            note: input.adminNotes,
+            changedBy: adminId,
+          },
+        })
+
+        if (newStatus === BookingStatus.CONFIRMED) {
+          analyticsAction = { eventType: 'booking_confirmed', unitId: booking.unitId, bookingId }
+        } else if (newStatus === BookingStatus.COMPLETED) {
+          analyticsAction = { eventType: 'rental_completed', unitId: booking.unitId, bookingId }
         }
+
+        return res
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
       }
+    )
 
-      // Update booking
-      const updated = await tx.booking.update({
-        where: { id: bookingId },
-        data: {
-          status: newStatus,
-          adminNotes: input.adminNotes ? `${booking.adminNotes ? booking.adminNotes + '\n' : ''}${input.adminNotes}` : undefined,
-          // Clear hold expiration if confirmed
-          holdExpiresAt: newStatus === BookingStatus.CONFIRMED ? null : booking.holdExpiresAt,
-        },
-        include: {
-          customer: true,
-          unit: true,
-          paymentRecords: true,
-        },
-      })
+    if (analyticsAction) {
+      const a = analyticsAction as { eventType: string; unitId: string; bookingId: string }
+      prisma.analyticsEvent.create({
+        data: { eventType: a.eventType, unitId: a.unitId, metadata: JSON.stringify({ bookingId: a.bookingId }) },
+      }).catch(() => {})
+    }
 
-      // Record history
-      await tx.bookingStatusHistory.create({
-        data: {
-          bookingId,
-          fromStatus: currentStatus,
-          toStatus: newStatus,
-          note: input.adminNotes,
-          changedBy: adminId,
-        },
-      })
-
-      // Track analytics
-      if (newStatus === BookingStatus.CONFIRMED) {
-        await tx.analyticsEvent.create({
-          data: { eventType: 'booking_confirmed', unitId: booking.unitId, metadata: JSON.stringify({ bookingId }) },
-        })
-      } else if (newStatus === BookingStatus.COMPLETED) {
-        await tx.analyticsEvent.create({
-          data: { eventType: 'rental_completed', unitId: booking.unitId, metadata: JSON.stringify({ bookingId }) },
-        })
-      }
-
-      return updated
-    })
+    return updated
   },
 
   /**
